@@ -5,7 +5,7 @@ from sklearn.cluster import KMeans
 from graph import normalize_matrix
 
 
-def spectral_clustering(affinity_mat, n_clusters):
+def spectral(affinity_mat, n_clusters):
     n_nodes = affinity_mat.shape[0]
 
     # Symmetric Laplacian
@@ -24,3 +24,14 @@ def spectral_clustering(affinity_mat, n_clusters):
     kmeans = KMeans(n_clusters=n_clusters, n_init=20, random_state=1).fit(space)
 
     return kmeans.labels_
+
+
+def txs_centric(mimo, n_clusters):
+    kmeans = KMeans(n_clusters=n_clusters, n_init=20, random_state=1).fit(mimo.txs_)
+    nearest_txs = np.argmax(mimo.pl_matrix_, axis=0)
+    return kmeans.labels_, fast_update(mimo.pl_matrix_, kmeans.labels_)
+
+
+def fast_update(pl_matrix, txs_labels):
+    nearest_txs = np.argmax(pl_matrix, axis=0)
+    return txs_labels[nearest_txs]
