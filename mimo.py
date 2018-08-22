@@ -8,15 +8,15 @@ from sklearn.datasets.samples_generator import make_blobs
 
 FIG_ID = 1
 
-PATH_LOSS_EXPO = 3.6
+PATH_LOSS_EXPO_NLOS = 3.6
+PATH_LOSS_EXPO_LOS = 2.7
 PATH_LOSS_MIN = 0.010
 
+
 class MIMO:
-    def __init__(self, n_txs, n_rxs, seed=0):
-        np.random.seed(int(seed))
-        self.txs_ = np.random.rand(n_txs, 2)
-        self.rxs_ = np.random.rand(n_rxs, 2)
-        self.pl_matrix_ = path_loss(self.txs_, self.rxs_)
+    txs_ = None
+    rxs_ = None
+    pl_matrix_ = None
 
     def draw(self, txs_labels, rxs_labels, edges=False):
         global FIG_ID
@@ -27,9 +27,9 @@ class MIMO:
         for k, color in zip(range(n_clusters), colors):
             cluster_txs = txs_labels == k
             cluster_rxs = rxs_labels == k
-            plt.plot(self.txs_[cluster_txs, 0], self.txs_[cluster_txs, 1], color + '^', markersize=5,
+            plt.plot(self.txs_[cluster_txs, 0], self.txs_[cluster_txs, 1], color + '^', markersize=3,
                      markerfacecolor=color)
-            plt.plot(self.rxs_[cluster_rxs, 0], self.rxs_[cluster_rxs, 1], color + 'o', markersize=5,
+            plt.plot(self.rxs_[cluster_rxs, 0], self.rxs_[cluster_rxs, 1], color + 'o', markersize=3,
                      markerfacecolor=color)
             if not edges:
                 continue
@@ -43,12 +43,25 @@ class MIMO:
         self.pl_matrix_ = path_loss(self.txs_, self.rxs_)
 
 
+class DistributedMIMO(MIMO):
+    def __init__(self, n_txs, n_rxs, seed=0):
+        np.random.seed(int(seed))
+        self.txs_ = np.random.rand(n_txs, 2)
+        self.rxs_ = np.random.rand(n_rxs, 2)
+        self.pl_matrix_ = path_loss(self.txs_, self.rxs_)
+
+
 class MassiveMIMO(MIMO):
     def __init__(self, n_txs, n_rxs, seed=0):
         np.random.seed(int(seed))
-        # BS at [.5, .5]
+        theta = np.pi - (np.arange(n_txs) + 1) / (n_txs + 1) * np.pi
+        self.txs_ = np.vstack([np.cos(theta), np.sin(theta)]).T * 0.05
         self.rxs_ = np.random.rand(n_rxs, 2) - .5
-        self.pl_matrix_ = path_loss(usrs_theta, n_beams);
+        self.pl_matrix_ = path_loss_angular(n_txs, self.rxs_)
+
+    def move(self, std):
+        self.rxs_ += np.random.randn(self.rxs_.shape[0], 2) * std
+        self.pl_matrix_ = path_loss_angular(self.txs_.shape[0], self.rxs_)
 
 
 class ClusteredMIMO(MIMO):
@@ -64,21 +77,32 @@ class ClusteredMIMO(MIMO):
 
 
 def path_loss(txs, rxs):
-    global PATH_LOSS_EXPO, PATH_LOSS_MIN
+    global PATH_LOSS_MIN, PATH_LOSS_EXPO_NLOS
     distance_mat = dist.cdist(txs, rxs)
-    pl = 1 / np.power(np.maximum(distance_mat, PATH_LOSS_EXPO), PATH_LOSS_EXPO)
+    pl = 1 / np.power(np.maximum(distance_mat, PATH_LOSS_EXPO_NLOS), PATH_LOSS_EXPO_NLOS)
     return pl
 
 
 def path_loss_angular(n_txs, rxs):
-    global PATH_LOSS_EXPO, PATH_LOSS_MIN
-    distance_vec = np.sqrt(rxs[:, 0] * rxs[:, 0] + rxs[:, 1] * rxs[:, 1])
-
-    angular_vec = np.arctan2(rxs[:, 1], rxs[:, 0]) + np.pi
-    angular_vec = .5 * n_txs * np.pi * np.cos(angular_vec)
+    """
+    rxs = (x, y) are 2D-coordinates, which are (rho, theta) in polar expression
+    alpha = pi / 2 * cos(theta)
+    beta = (1:N - (N + 1) / 2) * pi 
+    phi = alpha - beta / N  # need to cast to matrix
+    array_factor = sin(N phi) / (N * sin(phi))
+    phase_gain = N * array_factor^2 
+    line_of_sight =
+    """
+    theta = np.arctan2(rxs[:, 1], rxs[:, 0])
+    rho = np.sqrt(rxs[:, 0] * rxs[:, 0] + rxs[:, 1] * rxs[:, 1])
+    alpha = np.pi / 2 * np.cos(theta)
     beta = (np.arange(1, n_txs + 1) - (n_txs + 1) / 2) * np.pi
-    delta = np.tile(beta, (rxs.shape[0], 1)).T * np.tile(beta, (n_txs, 1))
-    A = n_txs * np.power(np.sin(delta) / np.sin(delta / n_txs) / n_txs, 2)
+    phi = np.tile(alpha, (n_txs, 1)) - np.tile(beta, (rxs.shape[0], 1)).T / n_txs
+    array_factor = np.sin(n_txs * phi) / n_txs / np.sin(phi)
+    phase_gain = n_txs * array_factor * array_factor
+
+    global PATH_LOSS_EXPO_LOS, PATH_LOSS_MIN
+    return phase_gain / np.power(np.maximum(rho, PATH_LOSS_MIN), PATH_LOSS_EXPO_LOS)
 
 
 def slow_fading_capacity(channel_mat, txs_labels, rxs_labels, snr=1e10):
@@ -87,6 +111,8 @@ def slow_fading_capacity(channel_mat, txs_labels, rxs_labels, snr=1e10):
     for k in range(n_clusters):
         cluster_txs = txs_labels == k
         cluster_rxs = rxs_labels == k
+        if np.sum(cluster_txs) <= 0 or np.sum(cluster_rxs) <= 0:
+            continue
         signal_mat = channel_mat[cluster_txs][:, cluster_rxs]
 
         # Downlink
@@ -122,6 +148,8 @@ def pl_approx_capacity(pl_mat, txs_labels, rxs_labels, snr=1e10):
     for k in range(n_clusters):
         cluster_txs = txs_labels == k
         cluster_rxs = rxs_labels == k
+        if np.sum(cluster_txs) <= 0 or np.sum(cluster_rxs) <= 0:
+            continue
         signal_mat = pl_mat[cluster_txs][:, cluster_rxs]
 
         # Downlink
@@ -151,5 +179,5 @@ if __name__ == '__main__':
     # mimo = MIMO(n_txs=100, n_rxs=100, seed=1)
     # mimo.draw(np.ones((100,)), np.ones((100,)), edges=False)
 
-    mimo2 = ClusteredMIMO(n_txs=100, n_rxs=100, seed=1)
+    mimo2 = ClusteredMIMO(n_txs=100, n_rxs=100, n_clusters=4, seed=1)
     mimo2.draw(np.ones((100,)), np.ones((100,)), edges=False)
