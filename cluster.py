@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.linalg import eigh
 from sklearn.cluster import KMeans
+from sklearn.cluster.bicluster import SpectralCoclustering
 
 from graph import normalize_matrix
 
@@ -28,10 +29,15 @@ def spectral(affinity_mat, n_clusters):
 
 def txs_centric(mimo, n_clusters):
     kmeans = KMeans(n_clusters=n_clusters, n_init=20, random_state=1).fit(mimo.txs_)
-    nearest_txs = np.argmax(mimo.pl_matrix_, axis=0)
     return kmeans.labels_, fast_update(mimo.pl_matrix_, kmeans.labels_)
 
 
 def fast_update(pl_matrix, txs_labels):
     nearest_txs = np.argmax(pl_matrix, axis=0)
     return txs_labels[nearest_txs]
+
+
+def spectral_co_clustering(weight_mat, n_clusters):
+    model = SpectralCoclustering(n_clusters=n_clusters, random_state=0)
+    model.fit(weight_mat)
+    return model.row_labels_, model.column_labels_

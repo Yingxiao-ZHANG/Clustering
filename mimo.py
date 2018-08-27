@@ -79,7 +79,7 @@ class ClusteredMIMO(MIMO):
 def path_loss(txs, rxs):
     global PATH_LOSS_MIN, PATH_LOSS_EXPO_NLOS
     distance_mat = dist.cdist(txs, rxs)
-    pl = 1 / np.power(np.maximum(distance_mat, PATH_LOSS_EXPO_NLOS), PATH_LOSS_EXPO_NLOS)
+    pl = 1 / np.power(np.maximum(distance_mat, PATH_LOSS_MIN), PATH_LOSS_EXPO_NLOS)
     return pl
 
 
@@ -143,13 +143,15 @@ def fast_fading_capacity(pl_mat, txs_labels, rxs_labels, snr=1e10, n_fadings=int
 
 
 def pl_approx_capacity(pl_mat, txs_labels, rxs_labels, snr=1e10):
-    n_clusters = np.int_(np.maximum(np.max(txs_labels), np.max(rxs_labels))) + 1
-    rate = np.zeros((n_clusters, 2))
-    for k in range(n_clusters):
+    n_clusters_max = np.int_(np.maximum(np.max(txs_labels), np.max(rxs_labels))) + 1
+    n_clusters = 0
+    rate = np.zeros((n_clusters_max, 2))
+    for k in range(n_clusters_max):
         cluster_txs = txs_labels == k
         cluster_rxs = rxs_labels == k
         if np.sum(cluster_txs) <= 0 or np.sum(cluster_rxs) <= 0:
             continue
+        n_clusters += 1
         signal_mat = pl_mat[cluster_txs][:, cluster_rxs]
 
         # Downlink
