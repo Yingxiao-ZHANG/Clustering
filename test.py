@@ -2,6 +2,7 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.cluster import AffinityPropagation
 
 from cluster import spectral, txs_centric, fast_update, spectral_co_clustering
 from graph import to_bipartite
@@ -13,22 +14,44 @@ def topology_spectral():
     n_rxs = 100
     n_clusters = 10
     seed = 9
-
     mimo = DistributedMIMO(n_txs=n_txs, n_rxs=n_rxs, seed=seed)
+    plt.close("all")
+    plt.clf()
+
+    # spectral
     labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
     print('Spectral Rate = {0:.3f}'.format(
         pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
     ))
+    mimo.draw(txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:], edges=True)
 
-    plt.close("all")
-    plt.clf()
-    mimo.draw(txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:], edges=False)
-
+    # co-clustering
     txs_labels, rxs_labels = spectral_co_clustering(mimo.pl_matrix_, n_clusters)
     print('Spectral Co Rate = {0:.3f}'.format(
         pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels, rxs_labels=rxs_labels)
     ))
-    mimo.draw(txs_labels=txs_labels, rxs_labels=rxs_labels, edges=False)
+    mimo.draw(txs_labels=txs_labels, rxs_labels=rxs_labels, edges=True)
+
+    # Affinity Propagation
+    af = AffinityPropagation(damping=.9, max_iter=200, convergence_iter=15,
+                             copy=True, preference=None, affinity='precomputed'
+                             ).fit(X=to_bipartite(mimo.pl_matrix_))
+    labels = af.labels_
+    print('AP Rate = {0:.3f}'.format(
+        pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
+    ))
+    mimo.draw(txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:], edges=True)
+
+    # # DBSCAN
+    # dist = np.ones((n_txs+n_rxs, n_txs+n_rxs)) - to_bipartite(normalize_matrix(mimo.pl_matrix_))
+    # db = DBSCAN(eps=1, min_samples=3, metric='precomputed',
+    #              metric_params=None, algorithm='auto', leaf_size=30, p=None,
+    #              n_jobs=1).fit(X=dist)
+    # labels = db.labels_
+    # print('DBSCAN Rate = {0:.3f}'.format(
+    #     pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
+    # ))
+    # mimo.draw(txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:], edges=False)
 
     plt.show()
 
@@ -72,6 +95,7 @@ def topology_spectral_max_beam():
 
     plt.close("all")
     plt.clf()
+    # mimo.rxs_[:, 1] = np.abs(mimo.rxs_[:, 1])
     mimo.draw(txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:], edges=True)
     txs_labels = np.arange(n_txs)
     rxs_labels = txs_labels[np.argmax(mimo.pl_matrix_, axis=0)]
@@ -126,6 +150,7 @@ def rate_fast():
     n_rxs = 100
     n_clusters = 10
     seed = 9
+    threshold = 9.5
 
     n_slots = 50
     rate_sp = np.zeros((n_slots,))
@@ -147,13 +172,22 @@ def rate_fast():
         mimo.move(std=std)
         rxs_labels_sp = fast_update(mimo.pl_matrix_, txs_labels=txs_labels_sp)
         rate_sp[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_sp, rxs_labels=rxs_labels_sp)
+        if rate_sp[i] < threshold:
+            labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
+            txs_labels_sp = labels[:n_txs]
+            rxs_labels_sp = labels[n_txs:]
+            rate_sp[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_sp, rxs_labels=rxs_labels_sp)
 
+        # BS centric
         rxs_labels_bs = fast_update(mimo.pl_matrix_, txs_labels=txs_labels_bs)
         rate_bs[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_bs, rxs_labels=rxs_labels_bs)
     plt.figure()
     plt.plot(np.arange(n_slots), rate_sp, 'b-', label='Dynamic Clustering')
+    plt.plot(np.arange(n_slots), np.ones(rate_bs.shape) * threshold, 'g-.', label='Threshold')
     plt.plot(np.arange(n_slots), rate_bs, 'k--', label='Static Clustering')
-    plt.legend(loc='best', shadow=True, fontsize='x-large')
+    plt.legend(loc='center right', shadow=True, fontsize='x-large')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, y1 - 0.3, y2))
     plt.show()
 
 
@@ -183,37 +217,36 @@ def complexity_slow_fast():
     plt.show()
 
 
-def rate_spectral_beam():
+def rate_beam_clusters():
     n_txs = 16
-    n_rxs = 32
-    seed = 5
+    seed = 9
 
-    x = np.arange(2, n_txs + 1)
-    rate_sp = np.zeros(x.shape)
+    x = np.arange(5, n_txs + 6)
+    rate_8 = np.zeros(x.shape)
+    rate_10 = np.zeros(x.shape)
+    rate_max = np.zeros(x.shape)
 
-    # spectral clustering
-    mimo = MassiveMIMO(n_txs=n_txs, n_rxs=n_rxs, seed=seed)
-    for (n_clusters, cnt) in zip(x, range(x.shape[0])):
+    for (n_rxs, cnt) in zip(x, range(x.shape[0])):
+        mimo = MassiveMIMO(n_txs=n_txs, n_rxs=n_rxs, seed=seed)
+
+        # max beam association
+        txs_labels = np.arange(n_txs)
+        rxs_labels = txs_labels[np.argmax(mimo.pl_matrix_, axis=0)]
+        rate_max[cnt] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels, rxs_labels=rxs_labels)
+        n_clusters_beam = count_clusters(txs_labels=txs_labels, rxs_labels=rxs_labels)
+        print('target: {0:d}; actual : {1:d}'.format(n_rxs, n_clusters_beam))
+
+        n_clusters = n_clusters_beam - 1
         labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
-        rate_sp[cnt] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
+        rate_8[cnt] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
+        n_clusters = 10
+        labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
+        rate_10[cnt] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=labels[:n_txs], rxs_labels=labels[n_txs:])
 
-    # max beam association
-    txs_labels = np.arange(n_txs)
-    rxs_labels = txs_labels[np.argmax(mimo.pl_matrix_, axis=0)]
-    rate_beam = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels, rxs_labels=rxs_labels)
-    n_clusters_beam = count_clusters(txs_labels=txs_labels, rxs_labels=rxs_labels)
-    print('target: {0:d}; actual : {1:d}'.format(n_txs, n_clusters_beam))
-
-    # plot avg user rate versus n_clusters
     plt.figure()
-    plt.plot(x, rate_sp, 'b-', label='Dynamic Clustering')
-    plt.plot(n_clusters_beam, rate_beam, 'rx', markersize=10, label='Max Beam')
-    plt.legend(loc='best', shadow=True, fontsize='x-large')
-
-    # plot sum rate versus n_clusters
-    plt.figure()
-    plt.plot(x, rate_sp * x, 'b-', label='Dynamic Clustering')
-    plt.plot(n_clusters_beam, rate_beam * n_clusters_beam, 'rx', markersize=10, label='Max Beam')
+    plt.plot(x, rate_8, 'b-', label='Dynamic Clustering')
+    # plt.plot(x, rate_10, 'g-.', label='Dynamic Clustering (10)')
+    plt.plot(x, rate_max, 'k--', markersize=10, label='Max Beam')
     plt.legend(loc='best', shadow=True, fontsize='x-large')
     plt.show()
 
@@ -232,9 +265,10 @@ def count_clusters(txs_labels, rxs_labels):
 
 def rate_fast_beam():
     n_txs = 16
-    n_rxs = 32
+    n_rxs = 16
     n_clusters = 8
-    seed = 9
+    seed = 10
+    threshold = 4.0
 
     n_slots = 50
     rate_sp = np.zeros((n_slots,))
@@ -244,7 +278,6 @@ def rate_fast_beam():
     mimo = MassiveMIMO(n_txs=n_txs, n_rxs=n_rxs, seed=seed)
     labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
     txs_labels_sp = labels[:n_txs]
-    rxs_labels_sp = labels[n_txs:]
 
     # max beam association
     txs_labels_beam = np.arange(n_txs)
@@ -257,18 +290,29 @@ def rate_fast_beam():
         # spectral
         rxs_labels_sp = fast_update(mimo.pl_matrix_, txs_labels=txs_labels_sp)
         rate_sp[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_sp, rxs_labels=rxs_labels_sp)
+        if rate_sp[i] < threshold:
+            labels = spectral(to_bipartite(mimo.pl_matrix_), n_clusters=n_clusters)
+            txs_labels_sp = labels[:n_txs]
+            rxs_labels_sp = labels[n_txs:]
+            rate_sp[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_sp, rxs_labels=rxs_labels_sp)
 
         # max beam
         rxs_labels_beam = fast_update(mimo.pl_matrix_, txs_labels=txs_labels_beam)
         rate_beam[i] = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels_beam, rxs_labels=rxs_labels_beam)
     plt.figure()
     plt.plot(np.arange(n_slots), rate_sp, 'b-', label='Dynamic Clustering')
+    plt.plot(np.arange(n_slots), np.ones(rate_sp.shape) * threshold, 'g-.', label='Threshold')
     plt.plot(np.arange(n_slots), rate_beam, 'k--', label='Max Beam')
-    plt.legend(loc='lower left', shadow=True, fontsize='x-large')
+    plt.legend(loc='lower right', shadow=True, fontsize='x-large')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, y1 - 1, y2))
     plt.show()
 
 
 if __name__ == "__main__":
     # topology_spectral_max_beam()
     # rate_fast_beam()
-    topology_spectral()
+    # rate_fast()
+    # topology_spectral_max_beam()
+    # rate_fast_beam()
+    rate_beam_clusters()
