@@ -3,7 +3,7 @@ from numpy.linalg import eigh
 from sklearn.cluster import KMeans
 from sklearn.cluster.bicluster import SpectralCoclustering
 
-from graph import normalize_matrix
+from cran.graph import normalize_matrix
 
 
 def spectral(affinity_mat, n_clusters):
@@ -41,3 +41,4 @@ def spectral_co_clustering(weight_mat, n_clusters):
     model = SpectralCoclustering(n_clusters=n_clusters, random_state=0)
     model.fit(weight_mat)
     return model.row_labels_, model.column_labels_
+

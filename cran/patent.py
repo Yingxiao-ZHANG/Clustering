@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.cluster import AffinityPropagation
 
-from cluster import spectral, txs_centric, fast_update, spectral_co_clustering
-from graph import to_bipartite
-from mimo import DistributedMIMO, pl_approx_capacity, MassiveMIMO
+from cran.cluster import spectral, txs_centric, fast_update, spectral_co_clustering
+from cran.graph import to_bipartite
+from cran.mimo import DistributedMIMO, pl_approx_capacity, MassiveMIMO
 
 
 def topology_spectral():
@@ -307,12 +307,3 @@ def rate_fast_beam():
     x1, x2, y1, y2 = plt.axis()
     plt.axis((x1, x2, y1 - 1, y2))
     plt.show()
-
-
-if __name__ == "__main__":
-    # topology_spectral_max_beam()
-    # rate_fast_beam()
-    # rate_fast()
-    # topology_spectral_max_beam()
-    # rate_fast_beam()
-    rate_beam_clusters()

@@ -11,6 +11,7 @@ FIG_ID = 1
 PATH_LOSS_EXPO_NLOS = 3.6
 PATH_LOSS_EXPO_LOS = 2.7
 PATH_LOSS_MIN = 0.010
+REF_SNR = np.power(10, -10 / 10)  # SNR = -10 dB at 1 unit distance
 
 
 class MIMO:
@@ -77,9 +78,10 @@ class ClusteredMIMO(MIMO):
 
 
 def path_loss(txs, rxs):
-    global PATH_LOSS_MIN, PATH_LOSS_EXPO_NLOS
+    global PATH_LOSS_MIN, PATH_LOSS_EXPO_NLOS, REF_SNR
     distance_mat = dist.cdist(txs, rxs)
     pl = 1 / np.power(np.maximum(distance_mat, PATH_LOSS_MIN), PATH_LOSS_EXPO_NLOS)
+    pl = pl * REF_SNR
     return pl
 
 
@@ -101,8 +103,8 @@ def path_loss_angular(n_txs, rxs):
     array_factor = np.sin(n_txs * phi) / n_txs / np.sin(phi)
     phase_gain = n_txs * array_factor * array_factor
 
-    global PATH_LOSS_EXPO_LOS, PATH_LOSS_MIN
-    return phase_gain / np.power(np.maximum(rho, PATH_LOSS_MIN), PATH_LOSS_EXPO_LOS)
+    global PATH_LOSS_EXPO_LOS, PATH_LOSS_MIN, REF_SNR
+    return phase_gain / np.power(np.maximum(rho, PATH_LOSS_MIN), PATH_LOSS_EXPO_LOS) * REF_SNR
 
 
 def slow_fading_capacity(channel_mat, txs_labels, rxs_labels, snr=1e10):
@@ -171,6 +173,11 @@ def pl_approx_capacity(pl_mat, txs_labels, rxs_labels, snr=1e10):
 def shannon_capacity(channel_mat):
     eigenvalues = linear.eigvalsh(np.matmul(channel_mat, channel_mat.conj().T))
     return np.sum(np.log2(1 + eigenvalues))
+
+
+def rayleigh(pl):
+    fast = np.random.normal(0, 0.1, pl.shape) + 1j * np.random.normal(0, 0.1, pl.shape)
+    return fast * pl
 
 
 def utility(rate):
