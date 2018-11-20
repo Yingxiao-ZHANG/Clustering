@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.cluster import AffinityPropagation
 
 from cran.cluster import spectral, txs_centric, fast_update, spectral_co_clustering
+from cran.graph import cut_metrics
 from cran.graph import to_bipartite
 from cran.mimo import DistributedMIMO, pl_approx_capacity, MassiveMIMO
 
@@ -115,6 +116,64 @@ def rate_spectral_static(n_txs, n_rxs, n_clusters, seed):
     rate_bs = pl_approx_capacity(mimo.pl_matrix_, txs_labels=txs_labels, rxs_labels=rxs_labels)
 
     return rate_sp, rate_bs
+
+
+def cut_spectral(n_txs, n_rxs, n_clusters, seed):
+    mimo = DistributedMIMO(n_txs=n_txs, n_rxs=n_rxs, seed=seed)
+    affinity = to_bipartite(mimo.pl_matrix_)
+    labels = spectral(affinity_mat=affinity, n_clusters=n_clusters)
+    cut = cut_metrics(affinity=affinity, labels=labels)
+    return cut
+
+
+def cut_spectral_density():
+    n_txs = 200
+    n_clusters = 90
+    x = np.arange(200, 201, 10)
+    normalized_cut = np.zeros(x.shape)
+    cut_ratio = np.zeros(x.shape)
+
+    cnt = 0
+    n_iter = 1
+    start = time.time()
+    for n_rxs in x:
+        for i in range(n_iter):
+            cut = cut_spectral(n_txs=n_txs, n_rxs=n_rxs, n_clusters=n_clusters, seed=6)
+            normalized_cut[cnt] += cut['normalized cut']
+            cut_ratio[cnt] += cut['cut ratio']
+        print('Time {0:.2f}, Normalized Cut = {1:.3f}, Cut Ratio = {2:.3f}'.format(
+            time.time() - start, normalized_cut[cnt], cut_ratio[cnt]))
+        cnt += 1
+    normalized_cut *= 1 / n_iter
+    cut_ratio *= 1 / n_iter
+
+    fig, ax = plt.subplots()
+    ax.plot(x / n_txs, normalized_cut, 'b-', label='Normalized Cut')
+    ax.plot(x / n_txs, cut_ratio, 'k--', label='Cut Ratio')
+    ax.legend(loc='best', shadow=True, fontsize='x-large')
+    plt.show()
+
+
+def ratio_multiscale():
+    n_txs = 200
+    n_rxs = 300
+    MRange = np.arange(115, n_rxs, 10)
+    NCut = np.zeros(MRange.shape)
+    Ratio = np.zeros(MRange.shape)
+
+    cnt = 0
+    n_iter = 20
+    start = time.time()
+    for M in MRange:
+        for i in range(n_iter):
+            cut = cut_spectral(n_txs=n_txs, n_rxs=n_rxs, n_clusters=M, seed=6)
+            NCut[cnt] += cut['normalized cut']
+            Ratio[cnt] += cut['cut ratio']
+        print('Time {0:.2f}s, NCut = {1:.4f}, Ratio = {2:.4f}, M = {3:d}'.format(time.time() - start, NCut[cnt],
+                                                                                 Ratio[cnt], MRange[cnt]))
+        cnt += 1
+    NCut *= 1 / n_iter
+    Ratio *= 1 / n_iter
 
 
 def rate_density():

@@ -24,6 +24,33 @@ def normalize_matrix(A):
     return drow_inv_sqrt_mat.dot(A).dot(dcol_inv_sqrt_mat)
 
 
+def cut_metrics(affinity, labels):
+    if affinity.shape[0] != affinity.shape[1] or labels.shape[0] != affinity.shape[0]:
+        return {}
+    n_clusters = np.int_(np.max(labels)) + 1
+    normalized_cut = 0
+    cut_ratio = 0
+    for k in range(n_clusters):
+        if not np.any(labels == k):
+            continue
+        active = affinity[labels == k]
+        vol = np.sum(active)
+        cut = np.sum(active[:, labels != k])
+
+        normalized_cut += cut / vol
+
+        if vol == cut:
+            continue
+        if vol < cut or vol - cut < 1e-10:
+            continue
+            print('vol < cut or vol - cut < 1e-10')
+            print('Cluster ID {0:d}, Vol={1:.2f}, Cut={2:.2f}'.format(k, vol, cut))
+        if vol > cut:
+            cut_ratio += cut / (vol - cut)
+
+    return {'normalized cut': normalized_cut, 'cut ratio': cut_ratio}
+
+
 if __name__ == '__main__':
     A = to_bipartite(np.random.rand(10, 8))
     print(A.shape)

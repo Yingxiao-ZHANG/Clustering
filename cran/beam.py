@@ -20,8 +20,6 @@ def cluster_usr():
 
     print(labels)
 
-    # TODO ensure non-empty clusters
-
     # TDMA + Zero-forcing Beamforming
     n_slot = 100
     rate = np.zeros((n_slot,))
