@@ -23,7 +23,7 @@ class MIMO:
         global FIG_ID
         plt.figure(FIG_ID)
         FIG_ID += 1
-        colors = cycle('bgrcmykbgrcmykbgrcmykbgrcmyk')
+        colors = cycle('kbgrcmykbgrcmykbgrcmykbgrcmyk')
         n_clusters = np.int_(np.maximum(np.max(txs_labels), np.max(rxs_labels))) + 1
         for k, color in zip(range(n_clusters), colors):
             cluster_txs = txs_labels == k
